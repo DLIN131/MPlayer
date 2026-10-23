@@ -89,8 +89,20 @@ fun PlayerScreen(route: Route.Player) {
     var buffering by remember { mutableStateOf(true) }
     var controlsVisible by remember { mutableStateOf(true) }
     var heights by remember { mutableStateOf(listOf<Int>()) }
-    var quality by remember { mutableIntStateOf(0) } // 0 = 自動，其他是畫面高度
+    var quality by remember { mutableIntStateOf(-1) } // -1 = 還沒決定，0 = 自動，其他是畫面高度
     var speed by remember { mutableStateOf(1f) }
+    var hint by remember { mutableStateOf<String?>(null) }
+    var hintSeq by remember { mutableIntStateOf(0) }
+    var holding2x by remember { mutableStateOf(false) }
+
+    fun showHint(text: String) {
+        hint = text
+        hintSeq++
+    }
+    LaunchedEffect(hintSeq) {
+        delay(800)
+        hint = null
+    }
 
     val player = remember {
         val headers = mapOf(
@@ -114,6 +126,33 @@ fun PlayerScreen(route: Route.Player) {
                 prepare()
                 playWhenReady = true
             }
+    }
+
+    /** 指定畫質：0 = 自動（依網速切換），其他是畫面高度 */
+    fun applyQuality(h: Int) {
+        quality = h
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
+            clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+            if (h != 0) {
+                player.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }?.let { g ->
+                    val idx = (0 until g.length).firstOrNull { g.getTrackFormat(it).height == h }
+                    if (idx != null) setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, idx))
+                }
+            }
+        }.build()
+    }
+
+    fun seekBy(sec: Int) {
+        val dur = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
+        player.seekTo((player.currentPosition + sec * 1000L).coerceIn(0, dur))
+        showHint(
+            when {
+                sec >= 60 -> "快轉 1 分鐘"
+                sec > 0 -> "快轉 $sec 秒"
+                sec <= -60 -> "倒退 1 分鐘"
+                else -> "倒退 ${-sec} 秒"
+            }
+        )
     }
 
     fun savePosition() {
@@ -146,6 +185,8 @@ fun PlayerScreen(route: Route.Player) {
                 heights = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
                     .flatMap { g -> (0 until g.length).map { g.getTrackFormat(it).height } }
                     .filter { it > 0 }.distinct().sortedDescending()
+                // 預設直接用最高畫質（有 1080p 就是 1080p），不讓自動切換先從低畫質開始
+                if (quality == -1 && heights.isNotEmpty()) applyQuality(heights.first())
             }
         }
         player.addListener(listener)
@@ -187,6 +228,18 @@ fun PlayerScreen(route: Route.Player) {
                     setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v ->
                         controlsVisible = v == android.view.View.VISIBLE
                     })
+                    setOnTouchListener(VideoGestures(
+                        view = this,
+                        onTap = { if (isControllerFullyVisible) hideController() else showController() },
+                        onMultiTap = { taps, right ->
+                            val sec = if (taps >= 3) 60 else 10
+                            seekBy(if (right) sec else -sec)
+                        },
+                        onHold = { down ->
+                            holding2x = down
+                            player.setPlaybackSpeed(if (down) 2f else speed)
+                        },
+                    ))
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -194,6 +247,20 @@ fun PlayerScreen(route: Route.Player) {
 
         if (buffering && error == null) {
             CircularProgressIndicator(color = Accent, modifier = Modifier.align(Alignment.Center))
+        }
+
+        val badge = if (holding2x) "2 倍速播放中 ▶▶" else hint
+        if (badge != null) {
+            Text(
+                badge,
+                color = Color.White,
+                fontSize = 15.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 64.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
         }
 
         // 上方列：返回、標題、倍速、畫質，跟著播放器控制列一起顯示／隱藏
@@ -223,21 +290,10 @@ fun PlayerScreen(route: Route.Player) {
                 }
                 if (heights.size > 1) {
                     Menu(
-                        label = if (quality == 0) "自動" else "${quality}p",
+                        label = if (quality <= 0) "自動" else "${quality}p",
                         options = listOf("自動") + heights.map { "${it}p" },
-                        selected = if (quality == 0) 0 else heights.indexOf(quality) + 1,
-                    ) { i ->
-                        quality = if (i == 0) 0 else heights[i - 1]
-                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
-                            clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-                            if (quality != 0) {
-                                player.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }?.let { g ->
-                                    val idx = (0 until g.length).firstOrNull { g.getTrackFormat(it).height == quality }
-                                    if (idx != null) setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, idx))
-                                }
-                            }
-                        }.build()
-                    }
+                        selected = if (quality <= 0) 0 else heights.indexOf(quality) + 1,
+                    ) { i -> applyQuality(if (i == 0) 0 else heights[i - 1]) }
                 }
             }
         }
