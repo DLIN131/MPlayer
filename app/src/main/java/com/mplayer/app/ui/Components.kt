@@ -23,11 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -51,6 +53,7 @@ val Accent = Color(0xFFE0457B)
 val Background = Color(0xFF16181D)
 val Surface = Color(0xFF22252C)
 val Muted = Color(0xFF9AA0AA)
+val TextColor = Color(0xFFEDEDED)
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
@@ -62,9 +65,14 @@ fun AppTheme(content: @Composable () -> Unit) {
             surface = Background,
             surfaceContainer = Surface,
             surfaceVariant = Surface,
+            onBackground = TextColor,
+            onSurface = TextColor,
+            onSurfaceVariant = Muted,
         ),
-        content = content,
-    )
+    ) {
+        // 沒有包在 Scaffold／Surface 裡的畫面，文字預設會是黑色，這裡統一給白色
+        CompositionLocalProvider(LocalContentColor provides TextColor, content = content)
+    }
 }
 
 /** 載入中／錯誤／沒有資料，放在列表最下面 */

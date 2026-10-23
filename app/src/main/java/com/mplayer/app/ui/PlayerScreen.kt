@@ -1,73 +1,166 @@
 package com.mplayer.app.ui
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.view.LayoutInflater
 import android.view.WindowManager
-import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.ui.PlayerView
+import com.mplayer.app.R
 import com.mplayer.app.net.Store
 import com.mplayer.app.net.WebFetcher
-import org.json.JSONObject
+import kotlinx.coroutines.delay
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
+
+private val videoHttp by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+}
+
+private val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
 /**
- * 影片是 HLS，CDN 一樣有 Cloudflare，一般播放器抓不到；分段還要帶網站的 Referer 才給。
- * 所以用 WebView + hls.js 播放：直接開網站網域底下的假網址，再用 shouldInterceptRequest
- * 回傳播放器頁面（不會真的連到網站），這樣它就是正常的 https 頁面，請求會帶 Referer，
- * 跟在瀏覽器裡看一樣。loadDataWithBaseURL 不會帶 Referer，分段會被擋 403。
+ * 影片是 HLS（分段副檔名是 .jpeg，內容其實是 TS）。
+ * CDN 沒帶網站的 Referer／Origin 會回 403，所以每個請求都補上這兩個標頭。
  */
-@SuppressLint("SetJavaScriptEnabled")
+@OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(route: Route.Player) {
     val activity = LocalContext.current as Activity
     val code = route.video.code
-    val web = remember {
-        val html = playerHtml(route.playlist, Store.position(code))
-        WebView(activity).apply {
-            setBackgroundColor(android.graphics.Color.BLACK)
-            settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                mediaPlaybackRequiresUserGesture = false
-                userAgentString = WebFetcher.userAgent
+    var error by remember { mutableStateOf<String?>(null) }
+    var buffering by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var heights by remember { mutableStateOf(listOf<Int>()) }
+    var quality by remember { mutableIntStateOf(0) } // 0 = 自動，其他是畫面高度
+    var speed by remember { mutableStateOf(1f) }
+
+    val player = remember {
+        val headers = mapOf(
+            "Referer" to WebFetcher.BASE + "/",
+            "Origin" to WebFetcher.BASE,
+        )
+        val dataSource = OkHttpDataSource.Factory(videoHttp)
+            .setUserAgent(WebFetcher.userAgent)
+            .setDefaultRequestProperties(headers)
+        ExoPlayer.Builder(activity)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(10_000)
+            .build().apply {
+                setMediaSource(
+                    HlsMediaSource.Factory(dataSource).createMediaSource(
+                        MediaItem.Builder().setUri(route.playlist).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+                    )
+                )
+                val start = Store.position(code)
+                if (start > 5) seekTo((start * 1000).toLong())
+                prepare()
+                playWhenReady = true
             }
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {
-                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                    if (request.url.host != WebFetcher.host) return null
-                    return when (request.url.path) {
-                        "/__app/player" -> WebResourceResponse("text/html", "utf-8", html.byteInputStream())
-                        "/__app/hls.js" -> WebResourceResponse("application/javascript", "utf-8", context.assets.open("hls.min.js"))
-                        else -> null
-                    }
-                }
+    }
+
+    fun savePosition() {
+        val dur = player.duration
+        val pos = player.currentPosition
+        if (pos <= 0) return
+        // 快看完就當作看完，下次從頭開始
+        val done = dur != C.TIME_UNSET && pos > dur - 30_000
+        Store.savePosition(code, if (done) 0f else pos / 1000f)
+    }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                buffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
+                if (state == Player.STATE_READY) error = null
+                if (state == Player.STATE_ENDED) Store.savePosition(code, 0f)
             }
-            addJavascriptInterface(object {
-                @JavascriptInterface
-                fun pos(sec: Float, dur: Float) {
-                    // 快看完就當作看完，下次從頭開始
-                    Store.savePosition(code, if (dur > 0 && sec > dur - 30) 0f else sec)
-                }
-            }, "AppBridge")
-            loadUrl(WebFetcher.BASE + "/__app/player")
+
+            override fun onPlayerError(e: PlaybackException) {
+                val cause = generateSequence(e.cause) { it.cause }.lastOrNull()?.message
+                error = "播放失敗（${e.errorCodeName}）" + (cause?.let { "\n$it" } ?: "")
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying) savePosition()
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                heights = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+                    .flatMap { g -> (0 until g.length).map { g.getTrackFormat(it).height } }
+                    .filter { it > 0 }.distinct().sortedDescending()
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            savePosition()
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
+    // 播放中每 5 秒存一次進度，被系統殺掉也不會全部遺失
+    LaunchedEffect(player) {
+        while (true) {
+            delay(5000)
+            if (player.isPlaying) savePosition()
         }
     }
 
@@ -79,114 +172,117 @@ fun PlayerScreen(route: Route.Player) {
         ctrl.hide(WindowInsetsCompat.Type.systemBars())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
-            web.evaluateJavascript("window.saveNow && saveNow()", null)
-            web.postDelayed({ web.destroy() }, 300)
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             ctrl.show(WindowInsetsCompat.Type.systemBars())
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
-    AndroidView(factory = { web }, modifier = Modifier.fillMaxSize().background(Color.Black))
-}
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(
+            factory = { ctx ->
+                (LayoutInflater.from(ctx).inflate(R.layout.video_player, null) as PlayerView).apply {
+                    this.player = player
+                    setShowSubtitleButton(false)
+                    setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v ->
+                        controlsVisible = v == android.view.View.VISIBLE
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
 
-private fun playerHtml(src: String, start: Float): String = """
-<!doctype html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<meta name="referrer" content="origin">
-<style>
-  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:sans-serif}
-  video{width:100%;height:100%;object-fit:contain;background:#000}
-  #bar{position:fixed;top:10px;right:12px;display:flex;gap:8px;transition:opacity .3s}
-  #bar.hide{opacity:0;pointer-events:none}
-  select,button{background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.35);
-    border-radius:6px;padding:6px 8px;font-size:14px}
-  #tip{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);color:#fff;font-size:18px;
-    background:rgba(0,0,0,.6);padding:8px 16px;border-radius:8px;display:none;pointer-events:none}
-</style>
-</head><body>
-<video id="v" controls playsinline autoplay
-  controlslist="nofullscreen nodownload noremoteplayback" disablepictureinpicture></video>
-<div id="bar">
-  <select id="rate">
-    <option value="0.75">0.75x</option><option value="1" selected>1x</option>
-    <option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option>
-  </select>
-  <select id="q"><option value="-1">自動</option></select>
-</div>
-<div id="tip"></div>
-<script src="/__app/hls.js"></script>
-<script>
-var src = ${JSONObject.quote(src)};
-var start = $start;
-var v = document.getElementById('v');
-var q = document.getElementById('q');
-var bar = document.getElementById('bar');
-var tip = document.getElementById('tip');
-var tipTimer, barTimer;
+        if (buffering && error == null) {
+            CircularProgressIndicator(color = Accent, modifier = Modifier.align(Alignment.Center))
+        }
 
-function showTip(t, ms) {
-  tip.textContent = t; tip.style.display = 'block';
-  clearTimeout(tipTimer);
-  if (ms) tipTimer = setTimeout(function () { tip.style.display = 'none'; }, ms);
-}
-function showBar() {
-  bar.classList.remove('hide');
-  clearTimeout(barTimer);
-  barTimer = setTimeout(function () { if (!v.paused) bar.classList.add('hide'); }, 3000);
-}
-function saveNow() {
-  if (v.currentTime > 0) AppBridge.pos(v.currentTime, v.duration || 0);
-}
-document.addEventListener('touchstart', showBar, {passive: true});
-v.addEventListener('pause', function () { showBar(); saveNow(); });
-v.addEventListener('ended', function () { AppBridge.pos(0, 0); });
-setInterval(function () { if (!v.paused) saveNow(); }, 5000);
-document.getElementById('rate').onchange = function () { v.playbackRate = parseFloat(this.value); };
+        // 上方列：返回、標題、倍速、畫質，跟著播放器控制列一起顯示／隱藏
+        if (controlsVisible || error != null) {
+            Row(
+                Modifier.fillMaxWidth().background(Color(0x88000000)).statusBarsPadding().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = Nav::pop) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = Color.White)
+                }
+                Text(
+                    route.video.title.ifEmpty { code.uppercase() },
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Menu(
+                    label = if (speed == 1f) "倍速" else "${speed}x",
+                    options = speeds.map { "${it}x" },
+                    selected = speeds.indexOf(speed),
+                ) {
+                    speed = speeds[it]
+                    player.setPlaybackSpeed(speed)
+                }
+                if (heights.size > 1) {
+                    Menu(
+                        label = if (quality == 0) "自動" else "${quality}p",
+                        options = listOf("自動") + heights.map { "${it}p" },
+                        selected = if (quality == 0) 0 else heights.indexOf(quality) + 1,
+                    ) { i ->
+                        quality = if (i == 0) 0 else heights[i - 1]
+                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
+                            clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                            if (quality != 0) {
+                                player.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }?.let { g ->
+                                    val idx = (0 until g.length).firstOrNull { g.getTrackFormat(it).height == quality }
+                                    if (idx != null) setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, idx))
+                                }
+                            }
+                        }.build()
+                    }
+                }
+            }
+        }
 
-// 雙擊左右兩側快退／快轉 10 秒
-v.addEventListener('dblclick', function (e) {
-  var d = e.clientX < window.innerWidth / 2 ? -10 : 10;
-  v.currentTime = Math.max(0, v.currentTime + d);
-  showTip(d > 0 ? '快轉 10 秒' : '倒退 10 秒', 700);
-});
-
-if (window.Hls && Hls.isSupported()) {
-  var hls = new Hls({startPosition: start > 5 ? start : -1, maxBufferLength: 60});
-  hls.loadSource(src);
-  hls.attachMedia(v);
-  hls.on(Hls.Events.MANIFEST_PARSED, function (ev, data) {
-    data.levels
-      .map(function (l, i) { return {h: l.height, i: i}; })
-      .sort(function (a, b) { return b.h - a.h; })
-      .forEach(function (l) {
-        var o = document.createElement('option');
-        o.value = l.i; o.textContent = l.h + 'p';
-        q.appendChild(o);
-      });
-    v.play().catch(function () { showTip('點一下開始播放', 2000); });
-  });
-  q.onchange = function () { hls.currentLevel = parseInt(this.value); };
-  var mediaRetry = 0;
-  hls.on(Hls.Events.ERROR, function (ev, data) {
-    if (!data.fatal) return;
-    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-      showTip('網路錯誤，重新連線中…', 2000);
-      setTimeout(function () { hls.startLoad(); }, 1500);
-    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetry++ < 3) {
-      hls.recoverMediaError();
-    } else {
-      showTip('播放失敗：' + data.details);
+        error?.let { msg ->
+            Column(
+                Modifier.align(Alignment.Center)
+                    .padding(24.dp)
+                    .background(Color(0xCC000000), RoundedCornerShape(10.dp))
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(msg, color = Color.White, textAlign = TextAlign.Center, fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            error = null
+                            player.prepare()
+                            player.play()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                    ) { Text("重試") }
+                    TextButton(onClick = Nav::pop) { Text("返回", color = Color.White) }
+                }
+            }
+        }
     }
-  });
-} else {
-  v.src = src;
-  v.addEventListener('loadedmetadata', function () { if (start > 5) v.currentTime = start; });
-  q.style.display = 'none';
 }
-showBar();
-</script>
-</body></html>
-"""
+
+@Composable
+private fun Menu(label: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }) { Text(label, color = Color.White, fontSize = 14.sp) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEachIndexed { i, name ->
+                DropdownMenuItem(
+                    text = { Text(name, color = if (i == selected) Accent else Color.Unspecified) },
+                    onClick = {
+                        open = false
+                        onSelect(i)
+                    },
+                )
+            }
+        }
+    }
+}

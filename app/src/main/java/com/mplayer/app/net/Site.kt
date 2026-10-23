@@ -136,7 +136,7 @@ object Site {
     }
 
     /** 播放網址藏在 p,a,c,k,e,d 打包過的 JS 裡，先解開再找 m3u8 */
-    private fun findPlaylist(html: String): String? {
+    internal fun findPlaylist(html: String): String? {
         val m3u8 = Regex("https?://[^'\"\\s]+?\\.m3u8")
         val packed = Regex(
             """eval\(function\(p,a,c,k,e,d\)\{.*?\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)""",
