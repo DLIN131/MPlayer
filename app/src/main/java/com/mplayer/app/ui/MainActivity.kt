@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
                             Route.Verify -> VerifyScreen()
                         }
                     }
+                    PreviewOverlay()
                 }
                 LaunchedEffect(Unit) {
                     runCatching { Updater.check() }.getOrNull()

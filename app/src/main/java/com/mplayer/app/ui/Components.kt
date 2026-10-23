@@ -1,7 +1,7 @@
 package com.mplayer.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -147,9 +150,25 @@ fun FeedGrid(feed: Feed<Video>) {
     )
 }
 
+/** 點一下開影片頁；長按顯示預覽短片，放開手指就關掉 */
 @Composable
 fun VideoCard(v: Video, onClick: () -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)) {
+    val haptic = LocalHapticFeedback.current
+    Column(
+        Modifier.clip(RoundedCornerShape(8.dp)).pointerInput(v.code) {
+            detectTapGestures(
+                onTap = { onClick() },
+                onLongPress = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    PreviewState.video = v
+                },
+                onPress = {
+                    tryAwaitRelease()
+                    PreviewState.video = null
+                },
+            )
+        }
+    ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Surface)) {
             AsyncImage(
                 model = v.cover,

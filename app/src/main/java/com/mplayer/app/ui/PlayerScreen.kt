@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -27,9 +28,10 @@ import com.mplayer.app.net.WebFetcher
 import org.json.JSONObject
 
 /**
- * 影片是 HLS，CDN 一樣有 Cloudflare，一般播放器抓不到。
- * 所以用 WebView + hls.js 播放：頁面放在網站同一個網域底下（loadDataWithBaseURL），
- * 由 Chromium 去抓播放清單和分段，跟在瀏覽器裡看一樣。
+ * 影片是 HLS，CDN 一樣有 Cloudflare，一般播放器抓不到；分段還要帶網站的 Referer 才給。
+ * 所以用 WebView + hls.js 播放：直接開網站網域底下的假網址，再用 shouldInterceptRequest
+ * 回傳播放器頁面（不會真的連到網站），這樣它就是正常的 https 頁面，請求會帶 Referer，
+ * 跟在瀏覽器裡看一樣。loadDataWithBaseURL 不會帶 Referer，分段會被擋 403。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -37,6 +39,7 @@ fun PlayerScreen(route: Route.Player) {
     val activity = LocalContext.current as Activity
     val code = route.video.code
     val web = remember {
+        val html = playerHtml(route.playlist, Store.position(code))
         WebView(activity).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
             settings.apply {
@@ -45,13 +48,16 @@ fun PlayerScreen(route: Route.Player) {
                 mediaPlaybackRequiresUserGesture = false
                 userAgentString = WebFetcher.userAgent
             }
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                    if (request.url.path == "/__app/hls.js") {
-                        return WebResourceResponse("application/javascript", "utf-8", context.assets.open("hls.min.js"))
+                    if (request.url.host != WebFetcher.host) return null
+                    return when (request.url.path) {
+                        "/__app/player" -> WebResourceResponse("text/html", "utf-8", html.byteInputStream())
+                        "/__app/hls.js" -> WebResourceResponse("application/javascript", "utf-8", context.assets.open("hls.min.js"))
+                        else -> null
                     }
-                    return null
                 }
             }
             addJavascriptInterface(object {
@@ -61,13 +67,7 @@ fun PlayerScreen(route: Route.Player) {
                     Store.savePosition(code, if (dur > 0 && sec > dur - 30) 0f else sec)
                 }
             }, "AppBridge")
-            loadDataWithBaseURL(
-                WebFetcher.BASE + "/",
-                playerHtml(route.playlist, Store.position(code)),
-                "text/html",
-                "utf-8",
-                null,
-            )
+            loadUrl(WebFetcher.BASE + "/__app/player")
         }
     }
 
@@ -95,6 +95,7 @@ private fun playerHtml(src: String, start: Float): String = """
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="referrer" content="origin">
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:sans-serif}
   video{width:100%;height:100%;object-fit:contain;background:#000}

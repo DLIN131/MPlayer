@@ -31,6 +31,7 @@ class BlockedException : Exception("被 Cloudflare 擋下了，請開啟驗證�
  */
 object WebFetcher {
     val BASE: String = decode("aHR0cHM6Ly9taXNzYXYud3M=")
+    val host: String = BASE.substringAfter("://")
 
     private var web: WebView? = null
     private val bootLock = Mutex()
