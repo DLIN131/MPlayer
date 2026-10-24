@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.mplayer.app.net.Prefs
+import com.mplayer.app.net.WebFetcher
 import com.mplayer.app.util.Updater
 
 class MainActivity : ComponentActivity() {
@@ -57,5 +58,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // 退到背景時讓隱藏的 WebView 休息
+    override fun onStart() {
+        super.onStart()
+        WebFetcher.resume()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        WebFetcher.pause()
     }
 }

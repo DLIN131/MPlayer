@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MPlayer"
-include(":app")
+include(":core", ":app", ":tv")

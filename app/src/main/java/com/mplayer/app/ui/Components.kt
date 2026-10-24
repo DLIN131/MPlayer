@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.mplayer.app.data.Feed
 import com.mplayer.app.net.Video
 
 val Accent = Color(0xFFE0457B)
@@ -143,11 +144,12 @@ fun VideoGrid(
     }
 }
 
+/** filter 是 App 端的篩選（有碼／無碼）；篩掉後太少的話，捲到底的判斷會繼續往下載 */
 @Composable
-fun FeedGrid(feed: Feed<Video>) {
+fun FeedGrid(feed: Feed<Video>, filter: (Video) -> Boolean = { true }) {
     LaunchedEffect(feed) { if (feed.items.isEmpty() && !feed.end) feed.loadMore() }
     VideoGrid(
-        items = feed.items,
+        items = feed.items.filter(filter),
         state = feed.grid,
         loading = feed.loading,
         error = feed.error,

@@ -40,8 +40,9 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew :app:assembleRelease :tv:assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk MPlayer.apk
+          cp tv/build/outputs/apk/release/tv-release.apk MPlayerTV.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -49,12 +50,16 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: MPlayer v1.0.${{ github.run_number }}
           make_latest: true
-          files: MPlayer.apk
+          # 手機版、電視版的 App 內更新各自用檔名挑自己的安裝檔
+          files: |
+            MPlayer.apk
+            MPlayerTV.apk
           # 更新說明就是 commit 訊息
           body: |
             ${{ github.event.head_commit.message }}
 
             ---
             固定下載網址（永遠是最新版）：
-            https://github.com/${{ github.repository }}/releases/latest/download/MPlayer.apk
+            手機版：https://github.com/${{ github.repository }}/releases/latest/download/MPlayer.apk
+            電視版：https://github.com/${{ github.repository }}/releases/latest/download/MPlayerTV.apk
 

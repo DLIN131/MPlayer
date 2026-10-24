@@ -6,11 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.mplayer.app.App
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
-import com.mplayer.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit
  * App 內更新：讀 GitHub 最新 Release，tag 為 v1.0.<versionCode>（CI 的 run_number）。
  */
 object Updater {
-    const val APK_NAME = "MPlayer.apk"
+    /** 手機版、電視版各自的安裝檔名（Release 裡兩個檔都有，依套件名稱挑） */
+    val apkName: String get() = if (App.instance.packageName.endsWith(".tv")) "MPlayerTV.apk" else "MPlayer.apk"
     private const val LATEST_API = "https://api.github.com/repos/DLIN131/MPlayer/releases/latest"
 
     data class Release(val versionCode: Int, val name: String, val notes: String, val apkUrl: String)
@@ -33,8 +34,11 @@ object Updater {
     /** 有新版本時設定，主畫面會跳出更新視窗 */
     var pending by mutableStateOf<Release?>(null)
 
-    val currentVersionCode: Int get() = BuildConfig.VERSION_CODE
-    val currentVersionName: String get() = "v" + BuildConfig.VERSION_NAME
+    private val packageInfo by lazy { App.instance.packageManager.getPackageInfo(App.instance.packageName, 0) }
+
+    @Suppress("DEPRECATION")
+    val currentVersionCode: Int get() = if (Build.VERSION.SDK_INT >= 28) packageInfo.longVersionCode.toInt() else packageInfo.versionCode
+    val currentVersionName: String get() = "v" + packageInfo.versionName
 
     private val client by lazy {
         OkHttpClient.Builder()
@@ -54,7 +58,7 @@ object Updater {
             var url: String? = null
             if (assets != null) for (i in 0 until assets.length()) {
                 val a = assets.getJSONObject(i)
-                if (a.optString("name") == APK_NAME) {
+                if (a.optString("name") == apkName) {
                     url = a.optString("browser_download_url")
                     break
                 }

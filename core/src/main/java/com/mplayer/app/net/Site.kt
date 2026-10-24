@@ -79,8 +79,33 @@ object Site {
         return withContext(Dispatchers.Default) { Jsoup.parse(html, WebFetcher.BASE) }
     }
 
-    private fun withParams(url: String, page: Int, sort: String): String {
+    /** 女優頁的演出人數篩選：網址參數 to 顯示名稱（網站端篩選） */
+    val casts = listOf(
+        "" to "全部",
+        "individual" to "單人作品",
+        "multiple" to "多人作品",
+    )
+
+    /** 有碼／無碼篩選。網站沒有這個參數，無碼片的番號都帶 -uncensored，所以在 App 端過濾 */
+    enum class Censor(val label: String) {
+        All("全部"),
+        Censored("有碼"),
+        Uncensored("無碼");
+
+        fun accept(v: Video) = when (this) {
+            All -> true
+            Censored -> !isUncensored(v)
+            Uncensored -> isUncensored(v)
+        }
+    }
+
+    fun isUncensored(v: Video) = v.code.contains("uncensored")
+
+    fun isActressUrl(url: String) = url.contains("/actresses/")
+
+    private fun withParams(url: String, page: Int, sort: String, filters: String = ""): String {
         val params = buildList {
+            if (filters.isNotEmpty()) add("filters=$filters")
             if (sort.isNotEmpty()) add("sort=$sort")
             if (page > 1) add("page=$page")
         }
@@ -88,9 +113,9 @@ object Site {
         return url + (if (url.contains('?')) "&" else "?") + params.joinToString("&")
     }
 
-    /** 分類／搜尋／女優／類型頁 */
-    suspend fun list(url: String, page: Int, sort: String = ""): Page<Video> {
-        val d = doc(withParams(abs(url), page, sort))
+    /** 分類／搜尋／女優／類型頁；filters 是女優頁的單人／多人篩選 */
+    suspend fun list(url: String, page: Int, sort: String = "", filters: String = ""): Page<Video> {
+        val d = doc(withParams(abs(url), page, sort, filters))
         val items = parseCards(d)
         val hasMore = items.isNotEmpty() && d.select("a[href*=page=${page + 1}]").isNotEmpty()
         return Page(items, hasMore)

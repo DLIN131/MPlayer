@@ -1,7 +1,6 @@
 package com.mplayer.app.ui
 
 import android.app.Activity
-import android.content.pm.ActivityInfo
 import android.view.LayoutInflater
 import android.view.WindowManager
 import androidx.annotation.OptIn
@@ -49,37 +48,21 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
 import com.mplayer.app.R
+import com.mplayer.app.data.VideoSource
 import com.mplayer.app.net.Store
-import com.mplayer.app.net.WebFetcher
 import kotlinx.coroutines.delay
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
-
-private val videoHttp by lazy {
-    OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-}
 
 private val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
-/**
- * 影片是 HLS（分段副檔名是 .jpeg，內容其實是 TS）。
- * CDN 沒帶網站的 Referer／Origin 會回 403，所以每個請求都補上這兩個標頭。
- */
+/** 全螢幕播放器；影片來源和請求標頭見 [VideoSource] */
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(route: Route.Player) {
@@ -105,22 +88,11 @@ fun PlayerScreen(route: Route.Player) {
     }
 
     val player = remember {
-        val headers = mapOf(
-            "Referer" to WebFetcher.BASE + "/",
-            "Origin" to WebFetcher.BASE,
-        )
-        val dataSource = OkHttpDataSource.Factory(videoHttp)
-            .setUserAgent(WebFetcher.userAgent)
-            .setDefaultRequestProperties(headers)
         ExoPlayer.Builder(activity)
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build().apply {
-                setMediaSource(
-                    HlsMediaSource.Factory(dataSource).createMediaSource(
-                        MediaItem.Builder().setUri(route.playlist).setMimeType(MimeTypes.APPLICATION_M3U8).build()
-                    )
-                )
+                setMediaSource(VideoSource.hls(route.playlist))
                 val start = Store.position(code)
                 if (start > 5) seekTo((start * 1000).toLong())
                 prepare()
@@ -208,12 +180,10 @@ fun PlayerScreen(route: Route.Player) {
     DisposableEffect(Unit) {
         val window = activity.window
         val ctrl = WindowCompat.getInsetsController(window, window.decorView)
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         ctrl.hide(WindowInsetsCompat.Type.systemBars())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             ctrl.show(WindowInsetsCompat.Type.systemBars())
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }

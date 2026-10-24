@@ -1,6 +1,8 @@
 package com.mplayer.app.net
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
@@ -74,6 +76,44 @@ object WebFetcher {
     /** 使用者在驗證頁過完驗證後呼叫，下次請求重新暖機 */
     fun reset() {
         ready = false
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val releaseLater = Runnable { release() }
+    private const val RELEASE_AFTER_MS = 60_000L
+
+    /**
+     * App 退到背景或進入播放器時：先暫停隱藏 WebView 的 JS 計時器和繪製，不佔 CPU；
+     * 超過 1 分鐘還沒回來（例如正在看影片）就整個釋放，把記憶體還給播放器。
+     */
+    fun pause() {
+        web?.let {
+            it.onPause()
+            it.pauseTimers()
+            mainHandler.removeCallbacks(releaseLater)
+            mainHandler.postDelayed(releaseLater, RELEASE_AFTER_MS)
+        }
+    }
+
+    fun resume() {
+        mainHandler.removeCallbacks(releaseLater)
+        web?.let {
+            it.resumeTimers()
+            it.onResume()
+        }
+    }
+
+    private fun release() {
+        val w = web ?: return
+        web = null
+        ready = false
+        pending.values.forEach { it.completeExceptionally(Exception("連線中斷，請重試")) }
+        pending.clear()
+        w.stopLoading()
+        w.removeJavascriptInterface("AppBridge")
+        // pauseTimers() 是全 App 共用的，釋放前要恢復，不然下一個 WebView 的 JS 不會動
+        w.resumeTimers()
+        w.destroy()
     }
 
     suspend fun get(path: String): String {

@@ -89,7 +89,7 @@ fun VideoScreen(route: Route.VideoPage) {
                                         duration = route.preview.duration,
                                     )
                                 )
-                                Nav.push(Route.Player(video, d.playlist))
+                                Nav.push(Route.Player(video, d.playlist!!))
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Accent),
                             modifier = Modifier.fillMaxWidth().height(48.dp),

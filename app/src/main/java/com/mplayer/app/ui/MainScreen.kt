@@ -2,6 +2,7 @@ package com.mplayer.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -372,7 +375,33 @@ fun ListingScreen(route: Route.Listing) {
         AppBar(route.title, back = true) {
             SortButton(route.sort) { route.sort = it }
         }
-        FeedGrid(route.feed)
+        if (route.isActress) {
+            FilterRow(Site.casts, route.cast) { route.cast = it }
+            FilterRow(Site.Censor.entries.map { it to it.label }, route.censor) { route.censor = it }
+        }
+        val censor = route.censor
+        FeedGrid(route.feed) { censor.accept(it) }
+    }
+}
+
+/** 一排可以單選的篩選標籤 */
+@Composable
+fun <T> FilterRow(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        options.forEach { (key, name) ->
+            FilterChip(
+                selected = key == selected,
+                onClick = { if (key != selected) onSelect(key) },
+                label = { Text(name) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Accent,
+                    selectedLabelColor = Color.White,
+                ),
+            )
+        }
     }
 }
 
