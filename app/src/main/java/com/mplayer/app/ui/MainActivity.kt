@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.mplayer.app.data.Downloads
 import com.mplayer.app.net.Prefs
 import com.mplayer.app.net.WebFetcher
 import com.mplayer.app.util.Updater
@@ -21,6 +22,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        Downloads.load()
         setContent {
             AppTheme {
                 val holder = rememberSaveableStateHolder()

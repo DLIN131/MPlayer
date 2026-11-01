@@ -92,7 +92,7 @@ fun PlayerScreen(route: Route.Player) {
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build().apply {
-                setMediaSource(VideoSource.hls(route.playlist))
+                setMediaSource(VideoSource.source(route.playlist))
                 val start = Store.position(code)
                 if (start > 5) seekTo((start * 1000).toLong())
                 prepare()

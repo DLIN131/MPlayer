@@ -331,7 +331,7 @@ private fun LibraryTab() {
             }
         }
         TabRow(selectedTabIndex = MainState.libraryTab, containerColor = Background, contentColor = Accent) {
-            listOf("收藏", "觀看紀錄").forEachIndexed { i, name ->
+            listOf("收藏", "觀看紀錄", "下載").forEachIndexed { i, name ->
                 Tab(
                     selected = MainState.libraryTab == i,
                     onClick = { MainState.libraryTab = i },
@@ -339,10 +339,10 @@ private fun LibraryTab() {
                 )
             }
         }
-        if (MainState.libraryTab == 0) {
-            VideoGrid(Store.favorites, emptyText = "還沒有收藏，在影片頁按愛心加入")
-        } else {
-            VideoGrid(Store.history, emptyText = "還沒有觀看紀錄")
+        when (MainState.libraryTab) {
+            0 -> VideoGrid(Store.favorites, emptyText = "還沒有收藏，在影片頁按愛心加入")
+            1 -> VideoGrid(Store.history, emptyText = "還沒有觀看紀錄")
+            else -> DownloadList()
         }
     }
 

@@ -98,6 +98,15 @@ fun VideoScreen(route: Route.VideoPage) {
                             Spacer(Modifier.width(6.dp))
                             Text(if (resume > 5) "繼續播放（${formatTime(resume)}）" else "播放", fontSize = 16.sp)
                         }
+                        Spacer(Modifier.height(8.dp))
+                        DownloadButton(
+                            video = video.copy(
+                                cover = route.preview.cover.ifEmpty { video.cover },
+                                duration = route.preview.duration,
+                            ),
+                            masterUrl = d.playlist!!,
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                        )
                     }
                     d != null -> Text("找不到播放來源", color = Muted)
                     route.error != null -> FeedFooter(false, route.error, route.blocked, false, route::load)
