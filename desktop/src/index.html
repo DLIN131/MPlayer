@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src * data: blob: file:; media-src * blob: file:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src https: blob:" />
+    <title>MPlayer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="navBack" class="navbtn" title="上一步（Alt+← / Backspace / 滑鼠側鍵）" disabled>‹</button>
+      <div class="brand">M<span>Player</span></div>
+      <button id="version" class="version" title="更新紀錄"></button>
+      <nav class="tabs" id="tabs"></nav>
+      <form class="search" id="searchForm">
+        <input id="searchInput" type="search" placeholder="搜尋番號、女優、標題" autocomplete="off" />
+        <button type="submit">搜尋</button>
+      </form>
+    </header>
+    <main id="view"></main>
+
+    <div id="player" class="player hidden"></div>
+    <div id="overlay" class="overlay hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="version.js"></script>
+    <script src="../node_modules/hls.js/dist/hls.min.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-name: Build & Release APK
+name: Build & Release
 
 on:
   push:
@@ -62,4 +62,37 @@ jobs:
             固定下載網址（永遠是最新版）：
             手機版：https://github.com/${{ github.repository }}/releases/latest/download/MPlayer.apk
             電視版：https://github.com/${{ github.repository }}/releases/latest/download/MPlayerTV.apk
+            電腦版（Windows）：https://github.com/${{ github.repository }}/releases/latest/download/MPlayer-Windows.zip
+
+  # 電腦版：Release 由上面的工作建立，這裡建好後把 zip 加進同一個 Release
+  desktop:
+    needs: build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Build Windows app
+        shell: pwsh
+        run: |
+          "window.APP_VERSION = ${{ github.run_number }}" | Set-Content -Encoding utf8 src/version.js
+          npm ci --no-audit --no-fund
+          npm version "1.0.${{ github.run_number }}" --no-git-tag-version
+          $env:APP_VERSION = "1.0.${{ github.run_number }}"
+          node pack.js dist
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path dist/MPlayer-win32-x64/* -DestinationPath out/MPlayer-Windows.zip
+
+      # 只加檔案，不改發布說明（Android 版的 App 內更新依檔名找自己的安裝檔，不受影響）
+      - name: Attach desktop zip
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          files: desktop/out/MPlayer-Windows.zip
 
