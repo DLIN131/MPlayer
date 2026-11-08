@@ -132,6 +132,33 @@ object WebFetcher {
         throw BlockedException()
     }
 
+    /**
+     * 網站的 JSON API（登入、收藏、觀看記錄）。跟網頁一樣在隱藏 WebView 裡送，登入的 cookie 自動帶上。
+     * 回傳 HTTP 狀態碼和內容，4xx 不丟例外（401 = 沒登入、422 = 帳密錯誤，呼叫端自己判斷）。
+     */
+    suspend fun api(method: String, path: String, json: String? = null): Pair<Int, String> {
+        val url = if (path.startsWith("http")) path else BASE + path
+        repeat(2) { attempt ->
+            ensureReady()
+            val r = fetch(url, method, json)
+            if (!isChallenge(r.first, r.second)) return r
+            ready = false
+            if (attempt == 1) throw BlockedException()
+        }
+        throw BlockedException()
+    }
+
+    /** 登出：清掉網站的 cookie（也會清掉 Cloudflare 的，下次抓網頁時自動重新驗證） */
+    suspend fun clearCookies() {
+        withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                CookieManager.getInstance().removeAllCookies { if (cont.isActive) cont.resume(Unit) }
+            }
+            CookieManager.getInstance().flush()
+        }
+        ready = false
+    }
+
     private fun isChallenge(status: Int, body: String) =
         (status == 403 || status == 503) &&
             (body.contains("cf-") || body.contains("challenge-platform") || body.contains("Cloudflare"))
@@ -164,12 +191,26 @@ object WebFetcher {
         }
     }
 
-    private suspend fun fetch(url: String): Pair<Int, String> {
+    private suspend fun fetch(url: String, method: String = "GET", json: String? = null): Pair<Int, String> {
         val id = seq.incrementAndGet()
         val result = CompletableDeferred<Pair<Int, String>>()
         pending[id] = result
+        // API 請求跟網站自己的 axios 一樣：JSON、帶 X-Requested-With 和 XSRF token（有的話）
+        val init = if (method == "GET" && json == null) "{credentials: 'include'}" else """
+            {
+              method: ${JSONObject.quote(method)},
+              credentials: 'include',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/) || [])[1] || '')
+              },
+              body: ${if (json != null && method != "GET") JSONObject.quote(json) else "undefined"}
+            }
+        """.trimIndent()
         val js = """
-            fetch(${JSONObject.quote(url)}, {credentials: 'include'})
+            fetch(${JSONObject.quote(url)}, $init)
               .then(function (r) { return r.text().then(function (t) { AppBridge.done($id, r.status, t); }); })
               .catch(function (e) { AppBridge.done($id, -1, String(e)); });
         """.trimIndent()

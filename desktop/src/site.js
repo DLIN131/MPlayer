@@ -127,7 +127,9 @@ export async function detail(code) {
   }
   const cover = d.querySelector('meta[property="og:image"]')?.getAttribute('content') || ''
   const title = (d.querySelector('h1')?.textContent || '').trim().replace(/\s+/g, ' ')
-  return { code, title, cover, rows, playlist: findPlaylist(html) }
+  // 網站內部的影片編號（收藏、觀看記錄的 API 用）
+  const itemId = (html.match(/\/api\/items\/([A-Za-z0-9]+)\/(?:save|view)/) || [])[1] || null
+  return { code, title, cover, rows, playlist: findPlaylist(html), itemId }
 }
 
 /** 播放網址藏在 p,a,c,k,e,d 打包過的 JS 裡，先解開再找 m3u8 */
@@ -147,3 +149,80 @@ export function findPlaylist(html) {
   }
   return (html.match(m3u8) || [])[0] || null
 }
+
+// ---------- 網站帳號 ----------
+
+/**
+ * 從網頁判斷有沒有登入：只有個人頁（收藏、觀看記錄）有使用者選單，
+ * 一般列表頁是網站快取的，看不出來。回傳登入的帳號（電郵），null = 沒登入
+ */
+export function parseLoginEmail(html) {
+  if (!html.includes("showDropdown = 'user'")) return null
+  const m = html.match(/登入為\s*<\/p>\s*<p[^>]*>\s*([^<]+?)\s*<\/p>/)
+  return (m && m[1].trim()) || '已登入'
+}
+
+export class NotLoggedIn extends Error {
+  constructor() {
+    super('登入已過期，請重新登入')
+  }
+}
+
+/** 帳號的影片收藏／觀看記錄（path = /saved 或 /history）；同時回傳登入狀態 */
+export async function accountList(path, page) {
+  const html = await window.hub.get(withParams(path, page))
+  const email = parseLoginEmail(html)
+  if (!email) throw new NotLoggedIn()
+  const d = parser.parseFromString(html, 'text/html')
+  const items = parseCards(d)
+  return { items, hasMore: items.length > 0 && hasNext(d, page), email }
+}
+
+/** 打開影片頁時通知網站（跟網站一樣會記一筆觀看記錄），順便拿有沒有收藏；沒登入回傳 null */
+export async function itemView(itemId) {
+  const r = await window.hub.api('GET', `/api/items/${itemId}/view`)
+  if (r.status < 200 || r.status >= 300) return null
+  try {
+    const o = JSON.parse(r.text)
+    return o.user ? !!o.saved : null
+  } catch {
+    return null
+  }
+}
+
+/** 加入／移除帳號收藏 */
+export async function setSaved(itemId, saved) {
+  const r = await window.hub.api(saved ? 'POST' : 'DELETE', `/api/items/${itemId}/save`, {})
+  if (r.status === 401) throw new NotLoggedIn()
+  if (r.status < 200 || r.status >= 300) throw new Error(`網站回應 HTTP ${r.status}`)
+}
+
+/** 清除帳號的所有觀看記錄 */
+export async function clearHistory() {
+  const r = await window.hub.api('DELETE', '/api/history', {})
+  if (r.status === 401) throw new NotLoggedIn()
+  if (r.status < 200 || r.status >= 300) throw new Error(`網站回應 HTTP ${r.status}`)
+}
+
+/** 登入；成功回傳帳號（電郵），失敗丟出給使用者看的原因。密碼只送到網站，不會存 */
+export async function login(email, password) {
+  const r = await window.hub.api('POST', '/api/login', { email: email.trim(), password, remember: true })
+  if (r.status >= 200 && r.status < 300) {
+    const who = parseLoginEmail(await window.hub.get('/saved'))
+    if (!who) throw new Error('登入沒有成功，請再試一次')
+    return who
+  }
+  if (r.status === 422) {
+    let msg = ''
+    try {
+      const o = JSON.parse(r.text)
+      const first = o.errors && Object.values(o.errors)[0]
+      msg = (Array.isArray(first) ? first[0] : first) || o.message || ''
+    } catch {}
+    throw new Error(msg || '電郵或密碼不正確')
+  }
+  if (r.status === 429) throw new Error('嘗試太多次了，請稍後再試')
+  throw new Error(`登入失敗（HTTP ${r.status}）`)
+}
+
+export const logout = () => window.hub.logout()

@@ -62,6 +62,8 @@ function createWindow() {
 function setupIpc() {
   ipcMain.handle('net:get', (_e, url) => fetcher.get(url))
   ipcMain.handle('net:media', (_e, url) => fetcher.allowMedia(url))
+  ipcMain.handle('net:api', (_e, method, url, json) => fetcher.api(method, url, json))
+  ipcMain.handle('net:logout', () => fetcher.logout())
   ipcMain.handle('site:base', () => fetcher.BASE)
   ipcMain.handle('shell:external', (_e, url) => shell.openExternal(url))
   ipcMain.handle('win:fullscreen', (_e, on) => {

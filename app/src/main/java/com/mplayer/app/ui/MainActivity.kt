@@ -14,6 +14,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.mplayer.app.data.Downloads
+import com.mplayer.app.data.appScope
+import com.mplayer.app.net.Account
+import kotlinx.coroutines.launch
 import com.mplayer.app.net.Prefs
 import com.mplayer.app.net.WebFetcher
 import com.mplayer.app.util.Updater
@@ -23,6 +26,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Downloads.load()
+        // 確認上次的登入還有效（過期就改回本機收藏）
+        appScope.launch { Account.refresh() }
         setContent {
             AppTheme {
                 val holder = rememberSaveableStateHolder()

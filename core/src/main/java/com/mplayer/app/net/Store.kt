@@ -89,6 +89,16 @@ object Store {
 object Prefs {
     private val sp by lazy { App.instance.getSharedPreferences("prefs", Context.MODE_PRIVATE) }
 
+    /** 登入的網站帳號（只用來顯示和判斷，密碼不存） */
+    var accountEmail: String?
+        get() = sp.getString("account_email", null)
+        set(value) = sp.edit().putString("account_email", value).apply()
+
+    /** 本機收藏已經問過要不要加到這個帳號（每個帳號只問一次） */
+    var mergeAsked: Set<String>
+        get() = sp.getStringSet("merge_asked", emptySet()).orEmpty()
+        set(value) = sp.edit().putStringSet("merge_asked", value).apply()
+
     /** 使用者選「略過這個版本」的 versionCode，自動檢查時不再提示這一版 */
     var skippedVersion: Int
         get() = sp.getInt("skipped_version", 0)

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
@@ -44,7 +45,10 @@ import androidx.tv.material3.ModalNavigationDrawer
 import androidx.tv.material3.NavigationDrawerItem
 import androidx.tv.material3.Text
 import androidx.tv.material3.rememberDrawerState
+import com.mplayer.app.data.appScope
+import com.mplayer.app.net.Account
 import com.mplayer.app.net.Prefs
+import kotlinx.coroutines.launch
 import com.mplayer.app.net.WebFetcher
 import com.mplayer.app.util.Updater
 import kotlinx.coroutines.delay
@@ -52,6 +56,8 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 確認上次的登入還有效（過期就改回本機收藏）
+        appScope.launch { Account.refresh() }
         setContent {
             TvAppTheme { AppRoot() }
         }
@@ -76,6 +82,7 @@ private val Tab.icon: ImageVector
         Tab.Actresses -> Icons.Filled.Person
         Tab.Favorites -> Icons.Filled.Favorite
         Tab.History -> Icons.Filled.DateRange
+        Tab.Account -> Icons.Filled.AccountCircle
     }
 
 @Composable
@@ -177,6 +184,7 @@ fun HomeScreen(focusDrawer: Boolean, onFocused: () -> Unit) {
                 Tab.Actresses -> ActressScreen()
                 Tab.Favorites -> LibraryScreen(favorites = true)
                 Tab.History -> LibraryScreen(favorites = false)
+                Tab.Account -> AccountScreen()
             }
         }
     }

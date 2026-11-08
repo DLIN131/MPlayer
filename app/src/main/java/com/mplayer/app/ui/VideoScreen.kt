@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.mplayer.app.net.Account
 import com.mplayer.app.net.Store
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -47,17 +48,29 @@ fun VideoScreen(route: Route.VideoPage) {
     LaunchedEffect(route) { if (route.detail == null && route.error == null) route.load() }
     val d = route.detail
     val video = d?.video ?: route.preview
-    val fav = Store.isFavorite(video.code)
+    // 登入時看帳號收藏，沒登入看本機收藏
+    val fav = if (Account.loggedIn && d?.itemId != null) route.remoteSaved == true else Store.isFavorite(video.code)
 
     Column(Modifier.fillMaxSize()) {
         AppBar(video.code.uppercase(), back = true) {
-            IconButton(onClick = { Store.toggleFavorite(video.copy(cover = route.preview.cover.ifEmpty { video.cover }, duration = route.preview.duration)) }) {
+            IconButton(
+                onClick = { route.toggleFavorite(video.copy(cover = route.preview.cover.ifEmpty { video.cover }, duration = route.preview.duration)) },
+                enabled = !route.savingFav,
+            ) {
                 Icon(
                     if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                     contentDescription = "收藏",
                     tint = if (fav) Accent else Color.White,
                 )
             }
+        }
+        route.favError?.let {
+            Text(
+                "收藏失敗：$it",
+                color = Accent,
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Surface)) {

@@ -130,8 +130,60 @@ button {
   text-align: center;
 }
 
-.search {
+.account-btn {
   margin-left: auto;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid #30313a;
+  background: var(--surface);
+  color: var(--text);
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+}
+.account-btn:hover {
+  border-color: var(--accent);
+}
+.account-btn.expired {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.login-form input {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #34353f;
+  background: var(--surface2);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+  outline: none;
+}
+.login-form input:focus {
+  border-color: var(--accent);
+}
+.login-err {
+  color: #f08ca8;
+  min-height: 1em;
+}
+.row-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.ov-box .bar {
+  margin-top: 10px;
+}
+
+.search {
   display: flex;
   gap: 6px;
 }

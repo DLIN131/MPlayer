@@ -87,6 +87,157 @@ function setPos(code, sec) {
   store.set('pos', all)
 }
 
+// ---------- 網站帳號：登入後收藏、觀看紀錄用網站上的（手機、電視、電腦、網頁同一份） ----------
+
+const account = { email: store.get('account', null), expired: false }
+const accountListeners = new Set()
+
+function setAccount(email, { expired = false } = {}) {
+  const changed = email !== account.email
+  account.email = email
+  account.expired = expired
+  store.set('account', email)
+  renderAccountBtn()
+  if (changed) for (const fn of accountListeners) fn()
+}
+
+/** 帳號列表的讀取器；網站說沒登入（過期、在別處登出）就改回本機模式 */
+const accountLoader = (path) => async (page) => {
+  try {
+    return await site.accountList(path, page)
+  } catch (e) {
+    if (e instanceof site.NotLoggedIn) setAccount(null, { expired: true })
+    throw e
+  }
+}
+
+/** 啟動時確認上次的登入還有效 */
+async function verifyAccount() {
+  if (!account.email) return
+  try {
+    const r = await site.accountList('/saved', 1)
+    setAccount(r.email)
+  } catch (e) {
+    if (e instanceof site.NotLoggedIn) setAccount(null, { expired: true })
+  }
+}
+
+function renderAccountBtn() {
+  const b = $('#accountBtn')
+  if (!b) return
+  b.textContent = account.email ? `👤 ${account.email}` : account.expired ? '登入已過期・重新登入' : '登入'
+  b.classList.toggle('expired', !account.email && account.expired)
+  b.title = account.email ? '帳號（收藏和觀看紀錄跟手機、電視、網站同步）' : '登入網站帳號，同步收藏和觀看紀錄'
+}
+
+/** 登入視窗：帳密直接送到網站，程式不會存密碼 */
+function loginDialog() {
+  const email = h('input', { type: 'email', placeholder: '電郵', autocomplete: 'username', value: account.email || '' })
+  const password = h('input', { type: 'password', placeholder: '密碼', autocomplete: 'current-password' })
+  const err = h('div', { class: 'login-err' })
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, '登入')
+  const form = h(
+    'form',
+    {
+      class: 'login-form',
+      onsubmit: async (e) => {
+        e.preventDefault()
+        if (!email.value.trim() || !password.value) return
+        submit.disabled = true
+        submit.textContent = '登入中…'
+        err.textContent = ''
+        try {
+          const who = await site.login(email.value, password.value)
+          setAccount(who)
+          closeOverlay()
+          toast(`已登入 ${who}`)
+          offerMerge()
+        } catch (ex) {
+          err.textContent = errText(ex)
+          submit.disabled = false
+          submit.textContent = '登入'
+        }
+      },
+    },
+    email,
+    password,
+    err,
+    submit,
+    h('div', { class: 'muted small' }, '使用網站的帳號。密碼只會送到網站，不會存在電腦上。'),
+  )
+  openOverlay(h('h2', {}, '登入網站帳號'), h('div', { class: 'muted' }, '登入後收藏和觀看紀錄會跟手機、電視和網站同步。'), form)
+  setTimeout(() => (account.email ? password : email).focus(), 50)
+}
+
+async function logout() {
+  if (!confirm('登出帳號？登出後收藏和觀看紀錄改回只存在這台電腦上，帳號裡的資料不會刪除。')) return
+  await site.logout().catch(() => {})
+  setAccount(null)
+  toast('已登出')
+}
+
+/** 把本機收藏加到帳號：每部先讀影片頁拿網站內部編號（不會記觀看記錄） */
+async function uploadLocalFavorites(onProgress) {
+  const list = [...favorites()].reverse() // 舊的先加，帳號裡的順序跟本機一樣
+  let ok = 0
+  for (let i = 0; i < list.length; i++) {
+    onProgress(i, list.length)
+    try {
+      const d = await site.detail(list[i].code)
+      if (d.itemId) {
+        await site.setSaved(d.itemId, true)
+        ok++
+      }
+    } catch (e) {
+      if (e instanceof site.NotLoggedIn) throw e
+    }
+  }
+  onProgress(list.length, list.length)
+  store.set('mergeAsked', [...new Set([...store.get('mergeAsked', []), account.email])])
+  return ok
+}
+
+function mergeDialog() {
+  const total = favorites().length
+  const msg = h('div', {}, `這台電腦上有 ${total} 部收藏，要加到網站帳號嗎？加入後在手機、電視和網站也看得到。`)
+  const bar = h('div', { class: 'bar hidden' }, h('div', { style: { width: '0%' } }))
+  const go = h('button', { class: 'btn primary' }, '加入')
+  const no = h('button', { class: 'btn' }, '不用')
+  no.onclick = () => {
+    store.set('mergeAsked', [...new Set([...store.get('mergeAsked', []), account.email])])
+    closeOverlay()
+  }
+  go.onclick = async () => {
+    go.disabled = no.disabled = true
+    bar.classList.remove('hidden')
+    try {
+      const ok = await uploadLocalFavorites((d, t) => {
+        msg.textContent = `加入中 ${d} / ${t}`
+        bar.firstChild.style.width = `${t ? (d * 100) / t : 0}%`
+      })
+      msg.textContent = ok === total ? `已加入 ${ok} 部收藏` : `已加入 ${ok} 部收藏（${total - ok} 部無法加入，可能已下架）`
+    } catch (e) {
+      msg.textContent = `加入失敗：${errText(e)}`
+    }
+    go.remove()
+    no.disabled = false
+    no.textContent = '關閉'
+    no.onclick = closeOverlay
+    if (cur?.kind === 'favorites') nav('favorites', {}, { root: true })
+  }
+  openOverlay(h('h2', {}, '加入帳號收藏？'), msg, bar, h('div', { class: 'row-btns' }, go, no))
+}
+
+/** 剛登入、本機有收藏、這個帳號還沒問過 → 問要不要加到帳號 */
+function offerMerge() {
+  if (account.email && favorites().length && !store.get('mergeAsked', []).includes(account.email)) mergeDialog()
+}
+
+// 登入狀態變了：收藏／觀看紀錄／設定頁換成對應的內容
+accountListeners.add(() => {
+  if (cur && ['favorites', 'history', 'settings'].includes(cur.kind)) nav(cur.kind, {}, { root: true })
+})
+
 // ---------- 導覽：頁面堆疊（返回時列表和捲動位置都還在） ----------
 
 const TABS = [
@@ -263,6 +414,37 @@ function chips(options, selected, onSelect) {
 
 const pageHead = (title, ...right) => h('div', { class: 'page-head' }, h('h1', {}, title), h('div', { class: 'spacer' }), ...right)
 
+/** 沒登入時，收藏／觀看紀錄頁上方的提示 */
+const loginHint = () => h('button', { class: 'btn', onclick: loginDialog }, '登入網站帳號，跨裝置同步')
+
+/** 設定頁的「網站帳號」區塊 */
+function accountSection() {
+  if (!account.email) {
+    return h(
+      'section',
+      {},
+      h('h2', {}, '網站帳號'),
+      account.expired ? h('div', { class: 'row', style: { color: 'var(--accent)' } }, '登入已過期，請重新登入') : null,
+      h('div', { class: 'row muted' }, '登入網站帳號後，收藏和觀看紀錄會跟手機、電視和網站同步。'),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: loginDialog }, '登入')),
+    )
+  }
+  const local = favorites().length
+  return h(
+    'section',
+    {},
+    h('h2', {}, '網站帳號'),
+    h('div', { class: 'row' }, '已登入：', h('b', {}, account.email)),
+    h('div', { class: 'row muted' }, '「收藏」和「觀看紀錄」現在顯示帳號裡的，打開影片頁也會記進帳號。播放進度只存在這台電腦。'),
+    h(
+      'div',
+      { class: 'row' },
+      local ? h('button', { class: 'btn', onclick: mergeDialog }, `把電腦上的 ${local} 部收藏加到帳號`) : null,
+      h('button', { class: 'btn', onclick: logout }, '登出'),
+    ),
+  )
+}
+
 // ---------- 頁面 ----------
 
 const PAGES = {
@@ -339,26 +521,61 @@ const PAGES = {
   },
 
   favorites() {
+    if (account.email) {
+      const f = feed(accountLoader('/saved'))
+      f.more()
+      return {
+        el: h('div', { class: 'page' }, pageHead('收藏', h('span', { class: 'muted small' }, `網站帳號 ${account.email}`)), f.el),
+        more: f.more,
+        // 在影片頁改過收藏，回來時重新載入
+        show: () => f.reset(accountLoader('/saved')),
+      }
+    }
     const body = h('div')
     const draw = () => body.replaceChildren(favorites().length ? h('div', { class: 'grid' }, favorites().map(videoCard)) : status('還沒有收藏，在影片頁按「收藏」加入'))
     draw()
-    return { el: h('div', { class: 'page' }, pageHead('收藏'), body), show: draw }
+    return { el: h('div', { class: 'page' }, pageHead('收藏', loginHint()), body), show: draw }
   },
 
   history() {
+    const clearLocal = () => {
+      store.set('history', [])
+      store.set('pos', {})
+    }
+    if (account.email) {
+      const f = feed(accountLoader('/history'))
+      const clear = h('button', {
+        class: 'btn',
+        onclick: async () => {
+          if (!confirm('清除網站帳號的所有觀看紀錄（手機、電視、網站都會清掉）和這台電腦的播放進度？')) return
+          try {
+            await site.clearHistory()
+            clearLocal()
+            f.reset(accountLoader('/history'))
+          } catch (e) {
+            toast(`清除失敗：${errText(e)}`, 5000)
+          }
+        },
+      }, '清除紀錄')
+      f.more()
+      return {
+        el: h('div', { class: 'page' }, pageHead('觀看紀錄', h('span', { class: 'muted small' }, `網站帳號 ${account.email}`), clear), f.el),
+        more: f.more,
+        show: () => f.reset(accountLoader('/history')),
+      }
+    }
     const body = h('div')
     const draw = () => body.replaceChildren(history().length ? h('div', { class: 'grid' }, history().map(videoCard)) : status('還沒有觀看紀錄'))
     const clear = h('button', {
       class: 'btn',
       onclick: () => {
         if (!confirm('清除所有觀看紀錄和播放進度？')) return
-        store.set('history', [])
-        store.set('pos', {})
+        clearLocal()
         draw()
       },
     }, '清除紀錄')
     draw()
-    return { el: h('div', { class: 'page' }, pageHead('觀看紀錄', clear), body), show: draw }
+    return { el: h('div', { class: 'page' }, pageHead('觀看紀錄', loginHint(), clear), body), show: draw }
   },
 
   downloads() {
@@ -387,6 +604,7 @@ const PAGES = {
         'div',
         { class: 'page settings' },
         pageHead('設定'),
+        accountSection(),
         h(
           'section',
           {},
@@ -445,14 +663,35 @@ const PAGES = {
     const actions = h('div', { class: 'vp-actions' }, loading())
     const rows = h('div', { class: 'vp-rows' })
     const favBtn = h('button', { class: 'btn' })
+    // 登入時：這部在帳號收藏裡嗎（null = 還不知道）
+    let remote = null
+    let viewed = false
+    const useRemote = () => !!(account.email && d?.itemId)
     const drawFav = () => {
-      const on = isFav(v.code)
+      const on = useRemote() ? remote === true : isFav(v.code)
       favBtn.textContent = on ? '♥ 已收藏' : '♡ 收藏'
       favBtn.classList.toggle('on', on)
     }
-    favBtn.onclick = () => {
-      toggleFav(full())
+    favBtn.onclick = async () => {
+      if (!useRemote()) {
+        toggleFav(full())
+        return drawFav()
+      }
+      const target = remote !== true
+      remote = target
+      favBtn.disabled = true
       drawFav()
+      try {
+        await site.setSaved(d.itemId, target)
+        toast(target ? '已加入帳號收藏' : '已從帳號收藏移除')
+      } catch (e) {
+        remote = !target
+        if (e instanceof site.NotLoggedIn) setAccount(null, { expired: true })
+        toast(`收藏失敗：${errText(e)}`, 5000)
+      } finally {
+        favBtn.disabled = false
+        drawFav()
+      }
     }
     drawFav()
     // 列表上的封面和片長比較準，存紀錄時沿用
@@ -482,6 +721,13 @@ const PAGES = {
       actions.replaceChildren(loading())
       try {
         d = await site.detail(v.code)
+        // 跟網站一樣：登入時打開影片頁會記進帳號的觀看記錄，同時拿收藏狀態（只在第一次打開時）
+        if (account.email && d.itemId && !viewed) {
+          viewed = true
+          remote = await site.itemView(d.itemId).catch(() => null)
+          if (remote === null) verifyAccount()
+        }
+        drawFav()
         if (!v.title) title.textContent = stripCode(d.title, v.code)
         if (!v.cover && d.cover) cover.replaceChildren(h('img', { src: d.cover, alt: '' }))
         const resume = getPos(v.code)
@@ -1097,9 +1343,13 @@ $('#searchForm').addEventListener('submit', (e) => {
 
 window.addEventListener('beforeunload', () => player?.savePos?.())
 
+$('#accountBtn').onclick = () => (account.email ? nav('settings', {}, { root: true }) : loginDialog())
+renderAccountBtn()
+
 nav('home', {}, { root: true })
+verifyAccount()
 setTimeout(() => checkUpdate(), 2500)
 showWhatsNew()
 
 // 測試用
-window.__app = { nav, goBack, openVideo, openPlayer, closePlayer, checkUpdate, showChangelog, jobs, get player() { return player } }
+window.__app = { account, setAccount, verifyAccount, nav, goBack, openVideo, openPlayer, closePlayer, checkUpdate, showChangelog, jobs, get player() { return player } }

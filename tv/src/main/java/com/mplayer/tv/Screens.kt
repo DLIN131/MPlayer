@@ -207,19 +207,6 @@ fun ActressScreen() {
     }
 }
 
-@Composable
-fun LibraryScreen(favorites: Boolean) {
-    Column(Modifier.fillMaxSize()) {
-        ScreenTitle(if (favorites) "收藏" else "觀看紀錄") {
-            if (!favorites && Store.history.isNotEmpty()) {
-                TvButton(onClick = Store::clearHistory) { Text("清除紀錄") }
-            }
-        }
-        if (favorites) LocalGrid(Store.favorites, "還沒有收藏，在影片頁按「收藏」加入")
-        else LocalGrid(Store.history, "還沒有觀看紀錄")
-    }
-}
-
 /** 自動驗證失敗時，讓使用者在看得到的 WebView 裡自己過 Cloudflare 驗證 */
 @Composable
 fun VerifyScreen() {

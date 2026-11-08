@@ -24,6 +24,8 @@ data class Detail(
     val rows: List<InfoRow>,
     /** HLS 主播放清單 */
     val playlist: String?,
+    /** 網站內部的影片編號，收藏／觀看記錄的 API 用 */
+    val itemId: String? = null,
 )
 
 data class Page<T>(val items: List<T>, val hasMore: Boolean)
@@ -121,6 +123,55 @@ object Site {
         return Page(items, hasMore)
     }
 
+    // ---------- 帳號（要登入） ----------
+
+    /** 帳號的影片收藏／觀看記錄（path = /saved 或 /history），新的在前面 */
+    suspend fun accountList(path: String, page: Int): Page<Video> {
+        val html = WebFetcher.get(withParams(abs(path), page, ""))
+        Account.update(html)
+        if (!Account.loggedIn) throw NotLoggedInException()
+        return withContext(Dispatchers.Default) {
+            val d = Jsoup.parse(html, WebFetcher.BASE)
+            val items = parseCards(d)
+            Page(items, items.isNotEmpty() && d.select("a[href*=page=${page + 1}]").isNotEmpty())
+        }
+    }
+
+    /**
+     * 打開影片頁時通知網站（跟網站一樣，會記一筆觀看記錄），順便拿這部有沒有收藏。
+     * 沒登入回傳 null。
+     */
+    suspend fun itemView(itemId: String): Boolean? {
+        val (status, text) = WebFetcher.api("GET", "/api/items/$itemId/view")
+        if (status !in 200..299) return null
+        val o = runCatching { org.json.JSONObject(text) }.getOrNull() ?: return null
+        if (o.isNull("user")) {
+            Account.markExpired()
+            return null
+        }
+        return o.optBoolean("saved")
+    }
+
+    /** 加入／移除帳號收藏 */
+    suspend fun setSaved(itemId: String, saved: Boolean) {
+        val (status, _) = WebFetcher.api(if (saved) "POST" else "DELETE", "/api/items/$itemId/save", "{}")
+        if (status == 401) {
+            Account.markExpired()
+            throw NotLoggedInException()
+        }
+        if (status !in 200..299) throw Exception("網站回應 HTTP $status")
+    }
+
+    /** 清除帳號的所有觀看記錄 */
+    suspend fun clearHistory() {
+        val (status, _) = WebFetcher.api("DELETE", "/api/history", "{}")
+        if (status == 401) {
+            Account.markExpired()
+            throw NotLoggedInException()
+        }
+        if (status !in 200..299) throw Exception("網站回應 HTTP $status")
+    }
+
     private fun parseCards(d: Document): List<Video> {
         val out = LinkedHashMap<String, Video>()
         for (card in d.select("div.thumbnail")) {
@@ -156,6 +207,7 @@ object Site {
                 cover = cover,
                 rows = rows,
                 playlist = findPlaylist(html),
+                itemId = Regex("/api/items/([A-Za-z0-9]+)/(?:save|view)").find(html)?.groupValues?.get(1),
             )
         }
     }

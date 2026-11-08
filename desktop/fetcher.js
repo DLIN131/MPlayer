@@ -118,7 +118,8 @@ async function get(url) {
   const full = abs(url)
   let res
   try {
-    res = await session.defaultSession.fetch(full, { headers: { 'User-Agent': ua, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' } })
+    // 帶登入的 cookie：個人頁（收藏、觀看記錄）要用
+    res = await session.defaultSession.fetch(full, { credentials: 'include', headers: { 'User-Agent': ua, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' } })
   } catch (e) {
     const msg = e.message || String(e)
     throw new Error(/net::ERR_/.test(msg) ? `連不上網站（網路中斷或網站被擋，${msg.replace(/^.*net::/, '')}）` : msg)
@@ -128,6 +129,53 @@ async function get(url) {
   if (res.status === 404) throw new Error('找不到這個頁面（影片可能已被刪除）')
   if (!res.ok) throw new Error(`網站回應 HTTP ${res.status}`)
   return text
+}
+
+/**
+ * 網站的 JSON API（登入、收藏、觀看記錄），登入的 cookie 自動帶上。
+ * 回傳 { status, text }，4xx 不丟例外（401 = 沒登入、422 = 帳密錯誤，由頁面判斷）
+ */
+async function api(method, url, json) {
+  const full = abs(url)
+  const res = await session.defaultSession.fetch(full, {
+    method,
+    credentials: 'include',
+    headers: {
+      'User-Agent': ua,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: BASE + '/',
+      Origin: BASE,
+    },
+    body: method === 'GET' ? undefined : JSON.stringify(json || {}),
+  })
+  const text = await res.text()
+  if (isChallenge(res.status, text)) {
+    // 先用網頁過一次驗證再重送
+    await loadViaWindow(BASE + '/')
+    return api(method, url, json)
+  }
+  // 登入後的 cookie 馬上寫進磁碟，程式當掉也不會掉登入
+  if (/\/api\/login/.test(full)) await session.defaultSession.cookies.flushStore().catch(() => {})
+  return { status: res.status, text }
+}
+
+/** 登出：通知網站，再把網站的 cookie 清掉 */
+async function logout() {
+  try {
+    await session.defaultSession.fetch(BASE + '/logout', { credentials: 'include', headers: { 'User-Agent': ua } })
+  } catch {}
+  const s = session.defaultSession
+  const host = hostOf(BASE)
+  for (const c of await s.cookies.get({})) {
+    const d = (c.domain || '').replace(/^\./, '')
+    if (d === host || host.endsWith('.' + d)) {
+      const url = `http${c.secure ? 's' : ''}://${d}${c.path || '/'}`
+      await s.cookies.remove(url, c.name).catch(() => {})
+    }
+  }
+  await s.cookies.flushStore().catch(() => {})
 }
 
 /** 抓 CDN 上的檔案（下載用）：在請求本身帶 Referer / Origin */
@@ -141,4 +189,4 @@ async function cdnFetch(url, signal) {
   return res
 }
 
-module.exports = { init, get, cdnFetch, allowMedia, BASE }
+module.exports = { init, get, api, logout, cdnFetch, allowMedia, BASE }

@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('hub', {
   get: (url) => ipcRenderer.invoke('net:get', url),
   /** 播放前登記影片 CDN，讓它的請求補上網站的標頭 */
   media: (url) => ipcRenderer.invoke('net:media', url),
+  /** 網站的 JSON API（登入、收藏、觀看記錄）：回傳 { status, text } */
+  api: (method, url, json) => ipcRenderer.invoke('net:api', method, url, json),
+  logout: () => ipcRenderer.invoke('net:logout'),
   base: () => ipcRenderer.invoke('site:base'),
   external: (url) => ipcRenderer.invoke('shell:external', url),
   fullscreen: (on) => ipcRenderer.invoke('win:fullscreen', on),

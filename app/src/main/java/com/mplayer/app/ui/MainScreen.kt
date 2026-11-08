@@ -78,6 +78,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.mplayer.app.data.AccountSync
+import com.mplayer.app.net.Account
 import com.mplayer.app.net.Site
 import com.mplayer.app.net.Store
 import com.mplayer.app.util.Updater
@@ -330,6 +332,7 @@ private fun LibraryTab() {
                 }
             }
         }
+        AccountHeader()
         TabRow(selectedTabIndex = MainState.libraryTab, containerColor = Background, contentColor = Accent) {
             listOf("收藏", "觀看紀錄", "下載").forEachIndexed { i, name ->
                 Tab(
@@ -339,9 +342,11 @@ private fun LibraryTab() {
                 )
             }
         }
+        // 登入時收藏、觀看紀錄是網站帳號的（各平台同步），沒登入是這支手機的
+        val loggedIn = Account.loggedIn
         when (MainState.libraryTab) {
-            0 -> VideoGrid(Store.favorites, emptyText = "還沒有收藏，在影片頁按愛心加入")
-            1 -> VideoGrid(Store.history, emptyText = "還沒有觀看紀錄")
+            0 -> if (loggedIn) FeedGrid(AccountSync.savedFeed) else VideoGrid(Store.favorites, emptyText = "還沒有收藏，在影片頁按愛心加入")
+            1 -> if (loggedIn) FeedGrid(AccountSync.historyFeed) else VideoGrid(Store.history, emptyText = "還沒有觀看紀錄")
             else -> DownloadList()
         }
     }
@@ -350,11 +355,24 @@ private fun LibraryTab() {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("清除觀看紀錄？") },
-            text = { Text("觀看紀錄和播放進度都會刪除，收藏不受影響。") },
+            text = {
+                Text(
+                    if (Account.loggedIn) "網站帳號的觀看紀錄（所有裝置和網站）和這支手機的播放進度都會刪除，收藏不受影響。"
+                    else "觀看紀錄和播放進度都會刪除，收藏不受影響。"
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     Store.clearHistory()
                     confirmClear = false
+                    if (Account.loggedIn) scope.launch {
+                        try {
+                            Site.clearHistory()
+                            AccountSync.invalidateHistory()
+                        } catch (e: Exception) {
+                            updateMsg = "清除帳號觀看紀錄失敗：${e.message}"
+                        }
+                    }
                 }) { Text("清除", color = Accent) }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },

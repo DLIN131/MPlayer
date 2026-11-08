@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.mplayer.app.net.Account
 import com.mplayer.app.net.Store
 import kotlinx.coroutines.delay
 
@@ -47,7 +48,8 @@ fun DetailScreen(route: TvRoute.Detail) {
         it.copy(cover = route.preview.cover.ifEmpty { it.cover }, duration = route.preview.duration)
     }
     val playFocus = remember { FocusRequester() }
-    val fav = Store.isFavorite(video.code)
+    // 登入時看帳號收藏，沒登入看本機收藏
+    val fav = if (Account.loggedIn && d?.itemId != null) route.remoteSaved == true else Store.isFavorite(video.code)
 
     LaunchedEffect(d?.playlist) {
         if (d?.playlist != null) {
@@ -116,9 +118,10 @@ fun DetailScreen(route: TvRoute.Detail) {
                         route.error != null -> ErrorBox(route.error!!, route.blocked, onRetry = route::load)
                         else -> Loading(size = 32)
                     }
-                    TvButton(onClick = { Store.toggleFavorite(video) }, selected = fav) {
+                    TvButton(onClick = { route.toggleFavorite(video) }, selected = fav) {
                         Text(if (fav) "♥  已收藏" else "♡  收藏")
                     }
+                    route.favError?.let { Text("收藏失敗：$it", color = Accent, fontSize = 14.sp) }
                 }
             }
             d?.rows?.forEach { row ->
