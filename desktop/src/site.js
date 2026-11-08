@@ -226,3 +226,43 @@ export async function login(email, password) {
 }
 
 export const logout = () => window.hub.logout()
+
+// ---------- 用番號查女優 ----------
+
+// 另一個整理女優名字的網站（素人、企劃片也有）；網址一樣只用 Base64 存
+const WIKI = atob('aHR0cHM6Ly9hdi13aWtpLm5ldA==')
+const wikiCache = new Map()
+
+/** 番號後面的版本標記（無碼流出、中文字幕…）拿掉，轉大寫 */
+export const normalizeCode = (code) =>
+  String(code || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-(uncensored-leak|chinese-subtitle|english-subtitle|uncensored|leak)$/, '')
+    .toUpperCase()
+
+/** 搜尋結果：每筆 article.archive-list，番號和女優名字在 ul.post-meta 裡；搜尋是模糊比對，只留番號對得上的 */
+export function parseWiki(html, code) {
+  const q = normalizeCode(code)
+  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const prefixed = new RegExp(`^\\d+${esc}$`)
+  const d = parser.parseFromString(html, 'text/html')
+  const out = new Map()
+  for (const art of d.querySelectorAll('article.archive-list')) {
+    const texts = [...art.querySelectorAll('ul.post-meta li')].map((li) => li.textContent.trim().toUpperCase())
+    if (!texts.some((t) => t === q || prefixed.test(t))) continue
+    for (const a of art.querySelectorAll('li.actress-name a')) {
+      const name = a.textContent.trim()
+      if (name && !out.has(name)) out.set(name, { name, url: a.getAttribute('href') })
+    }
+  }
+  return [...out.values()]
+}
+
+export async function wikiActresses(code) {
+  const q = normalizeCode(code)
+  if (wikiCache.has(q)) return wikiCache.get(q)
+  const list = parseWiki(await window.hub.get(`${WIKI}/?s=${encodeURIComponent(q)}`), q)
+  wikiCache.set(q, list)
+  return list
+}

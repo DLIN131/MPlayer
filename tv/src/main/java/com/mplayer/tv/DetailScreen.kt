@@ -35,6 +35,7 @@ import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.mplayer.app.net.Account
+import com.mplayer.app.net.Site
 import com.mplayer.app.net.Store
 import kotlinx.coroutines.delay
 
@@ -122,6 +123,26 @@ fun DetailScreen(route: TvRoute.Detail) {
                         Text(if (fav) "♥  已收藏" else "♡  收藏")
                     }
                     route.favError?.let { Text("收藏失敗：$it", color = Accent, fontSize = 14.sp) }
+                }
+            }
+            // 用番號查女優（素人、企劃片網站上常常沒寫）
+            item(key = "wiki") {
+                Column {
+                    Text("女優（番號查詢）", color = Gray, fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    val wiki = route.wiki
+                    when {
+                        wiki == null && route.wikiError -> Text("查詢失敗", color = Gray, fontSize = 15.sp)
+                        wiki == null -> Text("查詢中…", color = Gray, fontSize = 15.sp)
+                        wiki.isEmpty() -> Text("查不到這部的女優", color = Gray, fontSize = 15.sp)
+                        else -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(wiki, key = { it.name }) { a ->
+                                TvButton(onClick = { TvNav.push(TvRoute.Listing("搜尋：${a.name}", Site.searchUrl(a.name))) }) {
+                                    Text(a.name, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             d?.rows?.forEach { row ->

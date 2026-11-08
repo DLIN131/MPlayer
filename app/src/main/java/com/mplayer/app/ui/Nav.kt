@@ -11,11 +11,13 @@ import com.mplayer.app.data.appScope
 import com.mplayer.app.data.videoFeed
 import com.mplayer.app.net.Account
 import com.mplayer.app.net.Actress
+import com.mplayer.app.net.ActressLookup
 import com.mplayer.app.net.BlockedException
 import com.mplayer.app.net.Detail
 import com.mplayer.app.net.Site
 import com.mplayer.app.net.Store
 import com.mplayer.app.net.Video
+import com.mplayer.app.net.WikiActress
 import kotlinx.coroutines.launch
 
 sealed class Route {
@@ -47,9 +49,26 @@ sealed class Route {
         var savingFav by mutableStateOf(false)
         var favError by mutableStateOf<String?>(null)
 
+        /** 用番號查到的女優（null = 還在查） */
+        var wiki by mutableStateOf<List<WikiActress>?>(null)
+        var wikiError by mutableStateOf(false)
+
+        private fun lookupActress() {
+            if (wiki != null) return
+            wikiError = false
+            appScope.launch {
+                try {
+                    wiki = ActressLookup.find(preview.code)
+                } catch (e: Exception) {
+                    wikiError = true
+                }
+            }
+        }
+
         fun load() {
             error = null
             blocked = false
+            lookupActress()
             appScope.launch {
                 try {
                     val d = Site.detail(preview.code)

@@ -662,6 +662,19 @@ const PAGES = {
     const title = h('h1', { class: 'vp-title' }, stripCode(v.title, v.code) || v.code.toUpperCase())
     const actions = h('div', { class: 'vp-actions' }, loading())
     const rows = h('div', { class: 'vp-rows' })
+    // 用番號查女優（素人、企劃片網站上常常沒寫），點名字就搜尋她的影片
+    const wikiBody = h('div', { class: 'vp-text muted' }, '查詢中…')
+    const wikiRow = h('div', { class: 'vp-row' }, h('div', { class: 'vp-label' }, '女優（番號查詢）'), wikiBody)
+    site
+      .wikiActresses(v.code)
+      .then((list) =>
+        wikiBody.replaceWith(
+          list.length
+            ? h('div', { class: 'vp-links' }, list.map((a) => h('button', { class: 'chip', onclick: () => nav('list', { title: `搜尋：${a.name}`, url: site.searchUrl(a.name) }) }, a.name)))
+            : h('div', { class: 'vp-text muted' }, '查不到這部的女優'),
+        ),
+      )
+      .catch(() => (wikiBody.textContent = '查詢失敗'))
     const favBtn = h('button', { class: 'btn' })
     // 登入時：這部在帳號收藏裡嗎（null = 還不知道）
     let remote = null
@@ -747,7 +760,7 @@ const PAGES = {
     }
     load()
     return {
-      el: h('div', { class: 'page video-page' }, cover, h('div', { class: 'vp-info' }, h('div', { class: 'vp-code' }, v.code.toUpperCase()), title, actions, rows)),
+      el: h('div', { class: 'page video-page' }, cover, h('div', { class: 'vp-info' }, h('div', { class: 'vp-code' }, v.code.toUpperCase()), title, actions, rows, wikiRow)),
       // 從播放器回來：更新「繼續播放」的時間
       show: () => d && load(),
       dispose: unsub,

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mplayer.app.net.Account
+import com.mplayer.app.net.Site
 import com.mplayer.app.net.Store
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -141,6 +142,24 @@ fun VideoScreen(route: Route.VideoPage) {
                                     label = { Text(link.name) },
                                 )
                             }
+                        }
+                    }
+                }
+                // 用番號查女優（素人、企劃片網站上常常沒寫）
+                Spacer(Modifier.height(14.dp))
+                Text("女優（番號查詢）", color = Muted, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                val wiki = route.wiki
+                when {
+                    wiki == null && route.wikiError -> Text("查詢失敗", color = Muted, fontSize = 14.sp)
+                    wiki == null -> Text("查詢中…", color = Muted, fontSize = 14.sp)
+                    wiki.isEmpty() -> Text("查不到這部的女優", color = Muted, fontSize = 14.sp)
+                    else -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        wiki.forEach { a ->
+                            AssistChip(
+                                onClick = { Nav.push(Route.Listing("搜尋：${a.name}", Site.searchUrl(a.name))) },
+                                label = { Text(a.name) },
+                            )
                         }
                     }
                 }
