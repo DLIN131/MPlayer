@@ -2,6 +2,7 @@ package com.mplayer.app.data
 
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -100,15 +101,35 @@ object VideoSource {
             if (isTransient(loadErrorInfo.exception)) null
             else super.getFallbackSelectionFor(fallbackOptions, loadErrorInfo)
 
-        override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long =
-            if (isTransient(loadErrorInfo.exception)) (loadErrorInfo.errorCount * 1_000L).coerceAtMost(5_000L)
-            else super.getRetryDelayMsFor(loadErrorInfo)
+        override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long = when {
+            // 影片存放的空間被停用：重試再多次也一樣，直接報錯
+            isStorageBlocked(loadErrorInfo.exception) -> C.TIME_UNSET
+            isTransient(loadErrorInfo.exception) -> (loadErrorInfo.errorCount * 1_000L).coerceAtMost(5_000L)
+            else -> super.getRetryDelayMsFor(loadErrorInfo)
+        }
     }
 
     private fun isTransient(e: Throwable): Boolean {
         val code = (e as? HttpDataSource.InvalidResponseCodeException)?.responseCode ?: return false
+        if (isStorageBlocked(e)) return false
         return code == 403 || code == 429 || code >= 500
     }
+
+    /**
+     * 影片檔所在的雲端儲存空間被雲端業者停用（回 403，內容是 BucketPunish）。
+     * 這是網站那邊的問題，網站自己的播放器也播不了；通常是一批新上傳的影片一起壞掉。
+     */
+    private fun isStorageBlocked(e: Throwable): Boolean {
+        val ex = e as? HttpDataSource.InvalidResponseCodeException ?: return false
+        return ex.responseCode == 403 && String(ex.responseBody, Charsets.UTF_8).contains("BucketPunish")
+    }
+
+    const val STORAGE_BLOCKED_MESSAGE =
+        "這部影片在網站的伺服器上目前無法播放（網站本身也播不了，常見於最近上傳的影片），請改看其他影片或過幾天再試"
+
+    /** 播放失敗是不是因為上面這個網站端的問題 */
+    fun isStorageBlockedError(error: PlaybackException): Boolean =
+        generateSequence<Throwable>(error) { it.cause }.any { isStorageBlocked(it) }
 
     /** 播放器遇到 HTTP 錯誤時看這個決定要不要自動從目前位置重新連線 */
     fun isTransientError(error: PlaybackException): Boolean =
@@ -142,6 +163,7 @@ object VideoSource {
                 ds.open(DataSpec(Uri.parse(url)))
                 return@withContext DataSourceUtil.readToEnd(ds)
             } catch (e: HttpDataSource.InvalidResponseCodeException) {
+                if (isStorageBlocked(e)) throw IOException(STORAGE_BLOCKED_MESSAGE)
                 if (!isTransient(e) || ++attempt >= 5) throw IOException("HTTP ${e.responseCode}")
                 delay(attempt * 1_000L)
             } finally {

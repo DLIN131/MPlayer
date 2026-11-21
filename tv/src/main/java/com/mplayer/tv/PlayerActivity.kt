@@ -107,6 +107,11 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            if (VideoSource.isStorageBlockedError(error)) {
+                showHint(VideoSource.STORAGE_BLOCKED_MESSAGE, long = true)
+                showOverlay()
+                return
+            }
             // 被 CDN 擋或斷線：自動從目前位置重新連線，連續失敗 3 次才要使用者按 OK
             if (VideoSource.isTransientError(error) && autoRetries < 3) {
                 autoRetries++

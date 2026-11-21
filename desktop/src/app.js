@@ -971,6 +971,11 @@ async function openPlayer(video, src, { local = false } = {}) {
     })
     hls.on(window.Hls.Events.ERROR, (_e, data) => {
       if (!data.fatal) return
+      // 播放清單回 403：影片檔所在的雲端空間被停用（網站自己也播不了，多半是最近上傳的影片），重試沒用
+      if (data.response?.code === 403 && /manifestLoad|levelLoad/.test(data.details)) {
+        showError('這部影片在網站的伺服器上目前無法播放（網站本身也播不了，常見於最近上傳的影片），請改看其他影片或過幾天再試')
+        return
+      }
       if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR && netRetry++ < 3) {
         flash('網路不穩，重新連線中…')
         setTimeout(() => hls.startLoad(), 1500)

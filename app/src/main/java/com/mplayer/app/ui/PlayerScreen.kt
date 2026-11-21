@@ -154,6 +154,10 @@ fun PlayerScreen(route: Route.Player) {
             }
 
             override fun onPlayerError(e: PlaybackException) {
+                if (VideoSource.isStorageBlockedError(e)) {
+                    error = VideoSource.STORAGE_BLOCKED_MESSAGE
+                    return
+                }
                 if (VideoSource.isTransientError(e) && autoRetries < 3) {
                     autoRetries++
                     showHint("連線被中斷，重新連線中…")
