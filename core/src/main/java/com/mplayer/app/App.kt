@@ -6,6 +6,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.google.android.gms.net.CronetProviderInstaller
 
 class App : Application(), ImageLoaderFactory {
     companion object {
@@ -19,6 +20,8 @@ class App : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // 先在背景準備好 Google Play 服務的 Cronet，第一次播放時就能用（見 VideoSource）
+        runCatching { CronetProviderInstaller.installProvider(this) }
     }
 
     // 封面在另一個 CDN，沒有 Cloudflare，Coil 直接抓就行

@@ -78,6 +78,8 @@ class PlayerActivity : ComponentActivity() {
 
     private var code = ""
     private var ended = false
+    /** 連續自動重新連線的次數，播放恢復正常就歸零 */
+    private var autoRetries = 0
     /** 畫面高度清單（高到低）；-1 = 還沒決定，0 = 自動 */
     private var heights: List<Int> = emptyList()
     private var quality = -1
@@ -95,6 +97,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onPlaybackStateChanged(state: Int) {
+            if (state == Player.STATE_READY) autoRetries = 0
             if (state == Player.STATE_ENDED) {
                 ended = true
                 Store.savePosition(code, 0f)
@@ -104,6 +107,17 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            // 被 CDN 擋或斷線：自動從目前位置重新連線，連續失敗 3 次才要使用者按 OK
+            if (VideoSource.isTransientError(error) && autoRetries < 3) {
+                autoRetries++
+                showHint("連線被中斷，重新連線中…")
+                lifecycleScope.launch {
+                    delay(autoRetries * 1_500L)
+                    player.prepare()
+                    player.play()
+                }
+                return
+            }
             showHint("播放失敗（${error.errorCodeName}），按 OK 重試", long = true)
             showOverlay()
         }

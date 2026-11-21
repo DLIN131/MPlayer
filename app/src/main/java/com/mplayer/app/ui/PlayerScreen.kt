@@ -1,6 +1,8 @@
 package com.mplayer.app.ui
 
 import android.app.Activity
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.WindowManager
 import androidx.annotation.OptIn
@@ -137,14 +139,32 @@ fun PlayerScreen(route: Route.Player) {
     }
 
     DisposableEffect(player) {
+        val handler = Handler(Looper.getMainLooper())
+        var released = false
+        // 被 CDN 擋或斷線：自動從目前位置重新連線，連續失敗 3 次才顯示錯誤
+        var autoRetries = 0
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 buffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
-                if (state == Player.STATE_READY) error = null
+                if (state == Player.STATE_READY) {
+                    error = null
+                    autoRetries = 0
+                }
                 if (state == Player.STATE_ENDED) Store.savePosition(code, 0f)
             }
 
             override fun onPlayerError(e: PlaybackException) {
+                if (VideoSource.isTransientError(e) && autoRetries < 3) {
+                    autoRetries++
+                    showHint("連線被中斷，重新連線中…")
+                    handler.postDelayed({
+                        if (!released) {
+                            player.prepare()
+                            player.play()
+                        }
+                    }, autoRetries * 1_500L)
+                    return
+                }
                 val cause = generateSequence(e.cause) { it.cause }.lastOrNull()?.message
                 error = "播放失敗（${e.errorCodeName}）" + (cause?.let { "\n$it" } ?: "")
             }
@@ -163,6 +183,8 @@ fun PlayerScreen(route: Route.Player) {
         }
         player.addListener(listener)
         onDispose {
+            released = true
+            handler.removeCallbacksAndMessages(null)
             savePosition()
             player.removeListener(listener)
             player.release()

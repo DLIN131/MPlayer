@@ -38,6 +38,9 @@ dependencies {
     api("androidx.media3:media3-exoplayer:1.6.1")
     api("androidx.media3:media3-exoplayer-hls:1.6.1")
     api("androidx.media3:media3-datasource-okhttp:1.6.1")
+    // 影片 CDN 偶爾會擋 OkHttp（403）；改用 Chromium 的網路層 Cronet（Google Play 服務提供，沒有時退回 OkHttp）
+    api("androidx.media3:media3-datasource-cronet:1.6.1")
+    api("com.google.android.gms:play-services-cronet:18.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }
